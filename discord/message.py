@@ -214,7 +214,7 @@ class Message:
         return reaction
 
     def _remove_reaction(self, data, emoji, user_id):
-        reaction = utils.find(lambda r: r.emoji == emoji, self.reactions)
+        reaction = utils.find(lambda r: getattr(r.emoji, "id", r.emoji) == getattr(emoji, "id", r.emoji), self.reactions)
 
         if reaction is None:
             # already removed?

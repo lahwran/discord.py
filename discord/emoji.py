@@ -175,6 +175,9 @@ class Emoji(Hashable):
     def __repr__(self):
         return '<Emoji id={0.id} name={0.name!r}>'.format(self)
 
+    def __eq__(self, other):
+        return getattr(other, "id", None) == self.id and getattr(other, "name", None) == self.name
+
     @property
     def created_at(self):
         """Returns the emoji's creation time in UTC."""

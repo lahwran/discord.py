@@ -56,7 +56,7 @@ class ConnectionState:
     def __init__(self, *, dispatch, chunker, syncer, http, loop, **options):
         self.loop = loop
         self.http = http
-        self.max_messages = max(options.get('max_messages', 5000), 100)
+        self.max_messages = options.get('max_messages')
         self.dispatch = dispatch
         self.chunker = chunker
         self.syncer = syncer
@@ -95,7 +95,7 @@ class ConnectionState:
         self._private_channels = OrderedDict()
         # extra dict to look up private channels by user id
         self._private_channels_by_user = {}
-        self._messages = deque(maxlen=self.max_messages)
+        self._messages = {}
 
     def process_listeners(self, listener_type, argument, result):
         removed = []
@@ -226,7 +226,7 @@ class ConnectionState:
             self._private_channels_by_user.pop(channel.recipient.id, None)
 
     def _get_message(self, msg_id):
-        return utils.find(lambda m: m.id == msg_id, self._messages)
+        return self._messages.get(msg_id)
 
     def _add_guild_from_data(self, guild):
         guild = Guild(data=guild, state=self)
@@ -327,7 +327,7 @@ class ConnectionState:
         channel = self.get_channel(int(data['channel_id']))
         message = Message(channel=channel, data=data, state=self)
         self.dispatch('message', message)
-        self._messages.append(message)
+        self._messages[message.id] = message
 
     def parse_message_delete(self, data):
         message_id = int(data['id'])
@@ -337,16 +337,16 @@ class ConnectionState:
         found = self._get_message(message_id)
         if found is not None:
             self.dispatch('message_delete', found)
-            self._messages.remove(found)
+            del self._messages[found.id]
 
     def parse_message_delete_bulk(self, data):
         message_ids = { int(x) for x in data.get('ids', []) }
         channel_id = int(data['channel_id'])
         self.dispatch('raw_bulk_message_delete', message_ids, channel_id)
-        to_be_deleted = [message for message in self._messages if message.id in message_ids]
+        to_be_deleted = [message for message in self._messages.values() if message.id in message_ids]
         for msg in to_be_deleted:
             self.dispatch('message_delete', msg)
-            self._messages.remove(msg)
+            del self._messages[msg.id]
 
     def parse_message_update(self, data):
         message_id = int(data['id'])
@@ -686,7 +686,7 @@ class ConnectionState:
             return
 
         # do a cleanup of the messages cache
-        self._messages = deque((msg for msg in self._messages if msg.guild != guild), maxlen=self.max_messages)
+        self._messages = {msg.id: msg for msg in self._messages.values() if msg.guild != guild}
 
         self._remove_guild(guild)
         self.dispatch('guild_remove', guild)
@@ -871,7 +871,9 @@ class ConnectionState:
                 return channel
 
     def create_message(self, *, channel, data):
-        return Message(state=self, channel=channel, data=data)
+        msg = Message(state=self, channel=channel, data=data)
+        self._messages[msg.id] = msg
+        return msg
 
     def receive_chunk(self, guild_id):
         future = compat.create_future(self.loop)
